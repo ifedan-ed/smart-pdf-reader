@@ -1,4 +1,5 @@
 FROM node:20-alpine AS base
+RUN apk add --no-cache libc6-compat openssl openssl-dev
 
 FROM base AS deps
 WORKDIR /app
@@ -25,9 +26,10 @@ COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 COPY --from=builder /app/prisma ./prisma
 COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
 COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
+COPY --from=builder /app/cli ./cli
 
 RUN mkdir -p /app/uploads && chown nextjs:nodejs /app/uploads
-RUN mkdir -p /app/prisma && chown nextjs:nodejs /app/prisma
+RUN chown nextjs:nodejs /app/prisma
 
 USER nextjs
 
