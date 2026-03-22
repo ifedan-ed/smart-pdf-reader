@@ -44,7 +44,7 @@ export default function PDFViewer({
 
     try {
       const pdfjsLib = await import('pdfjs-dist')
-      pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdn.jsdelivr.net/npm/pdfjs-dist@4.4.168/build/pdf.worker.min.mjs`
+      pdfjsLib.GlobalWorkerOptions.workerSrc = '/pdf-worker.min.mjs'
 
       const token = localStorage.getItem('token')
       const pdfUrl = `/api/pdfs/${pdfId}/file`

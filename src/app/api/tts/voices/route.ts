@@ -1,23 +1,23 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getAuthFromRequest } from '@/lib/auth'
 import { getVoices } from '@/lib/elevenlabs'
+import { resolveApiKeys } from '@/lib/apikeys'
 
 export async function GET(request: NextRequest) {
   const auth = getAuthFromRequest(request)
-  if (!auth) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
+  if (!auth) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const { searchParams } = new URL(request.url)
-  const queryApiKey = searchParams.get('apiKey')
-  const apiKey = queryApiKey || process.env.ELEVENLABS_API_KEY || ''
+  const { elevenLabsKey } = await resolveApiKeys(auth.userId)
 
-  if (!apiKey) {
-    return NextResponse.json({ error: 'ElevenLabs API key is required' }, { status: 400 })
+  if (!elevenLabsKey) {
+    return NextResponse.json(
+      { error: 'ElevenLabs API key not configured. Add your key in Settings.' },
+      { status: 400 }
+    )
   }
 
   try {
-    const voices = await getVoices(apiKey)
+    const voices = await getVoices(elevenLabsKey)
     return NextResponse.json({ voices })
   } catch (error) {
     console.error('Get voices error:', error)

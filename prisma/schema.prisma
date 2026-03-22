@@ -3,7 +3,7 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
@@ -21,6 +21,7 @@ model User {
   highlights   Highlight[]
   progress     ReadingProgress[]
   nextcloud    NextcloudConfig?
+  apiKeys      UserApiKeys?
 }
 
 model PDF {
@@ -70,4 +71,20 @@ model NextcloudConfig {
   url      String
   username String
   password String
+}
+
+// Per-user API keys — override site-wide keys
+model UserApiKeys {
+  id            String  @id @default(cuid())
+  userId        String  @unique
+  user          User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  elevenLabsKey String?
+  openRouterKey String?
+}
+
+// Site-wide configuration set by admin (universal keys, etc.)
+model SiteConfig {
+  id    String @id @default(cuid())
+  key   String @unique
+  value String
 }

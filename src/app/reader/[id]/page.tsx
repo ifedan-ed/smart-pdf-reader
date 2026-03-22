@@ -51,8 +51,6 @@ export default function ReaderPage() {
   const [highlights, setHighlights] = useState<Highlight[]>([])
   const [voices, setVoices] = useState<Voice[]>([])
   const [selectedVoice, setSelectedVoice] = useState('')
-  const [ttsApiKey, setTtsApiKey] = useState('')
-  const [aiApiKey, setAiApiKey] = useState('')
   const [aiQuestion, setAiQuestion] = useState('')
   const [aiAnswer, setAiAnswer] = useState('')
   const [aiLoading, setAiLoading] = useState(false)
@@ -83,13 +81,6 @@ export default function ReaderPage() {
       },
     })
   }, [getToken])
-
-  useEffect(() => {
-    const savedApiKey = localStorage.getItem('elevenlabs_api_key') || ''
-    const savedAiKey = localStorage.getItem('openrouter_api_key') || ''
-    setTtsApiKey(savedApiKey)
-    setAiApiKey(savedAiKey)
-  }, [])
 
   useEffect(() => {
     async function loadPDF() {
@@ -166,8 +157,7 @@ export default function ReaderPage() {
   async function loadVoices() {
     if (voices.length > 0) return
     try {
-      const key = ttsApiKey || ''
-      const res = await fetchWithAuth(`/api/tts/voices?apiKey=${encodeURIComponent(key)}`)
+      const res = await fetchWithAuth('/api/tts/voices')
       if (res.ok) {
         const data = await res.json()
         setVoices(data.voices || [])
@@ -197,7 +187,6 @@ export default function ReaderPage() {
           pdfId: id,
           question: aiQuestion,
           pageText,
-          apiKey: aiApiKey,
         }),
       })
       const data = await res.json()
@@ -221,7 +210,7 @@ export default function ReaderPage() {
       const res = await fetchWithAuth('/api/ai/summarize', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: pageText, apiKey: aiApiKey }),
+        body: JSON.stringify({ text: pageText }),
       })
       const data = await res.json()
       if (res.ok) {
@@ -246,7 +235,7 @@ export default function ReaderPage() {
       const res = await fetchWithAuth('/api/tts/speak', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: text.substring(0, 5000), voiceId: selectedVoice, apiKey: ttsApiKey }),
+        body: JSON.stringify({ text: text.substring(0, 5000), voiceId: selectedVoice }),
       })
       if (res.ok) {
         const blob = await res.blob()
@@ -532,20 +521,6 @@ export default function ReaderPage() {
               {sidebarTab === 'ai' && (
                 <div className="space-y-4">
                   <div>
-                    <label className="block text-xs font-medium text-gray-500 mb-1">OpenRouter API Key</label>
-                    <input
-                      type="password"
-                      value={aiApiKey}
-                      onChange={(e) => {
-                        setAiApiKey(e.target.value)
-                        localStorage.setItem('openrouter_api_key', e.target.value)
-                      }}
-                      placeholder="sk-or-..."
-                      className="w-full text-xs px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none"
-                    />
-                  </div>
-
-                  <div>
                     <label className="block text-xs font-medium text-gray-500 mb-1">Ask a question about this page</label>
                     <textarea
                       value={aiQuestion}
@@ -612,22 +587,11 @@ export default function ReaderPage() {
               {sidebarTab === 'tts' && (
                 <div className="space-y-4">
                   <div>
-                    <label className="block text-xs font-medium text-gray-500 mb-1">ElevenLabs API Key</label>
-                    <input
-                      type="password"
-                      value={ttsApiKey}
-                      onChange={(e) => {
-                        setTtsApiKey(e.target.value)
-                        localStorage.setItem('elevenlabs_api_key', e.target.value)
-                      }}
-                      placeholder="Your ElevenLabs API key"
-                      className="w-full text-xs px-3 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none"
-                    />
                     <button
                       onClick={() => { setVoices([]); loadVoices() }}
-                      className="mt-1 text-xs text-primary-600 hover:text-primary-700"
+                      className="text-xs text-primary-600 hover:text-primary-700"
                     >
-                      Load voices
+                      Reload voices
                     </button>
                   </div>
 

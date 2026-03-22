@@ -31,8 +31,13 @@ export default function SettingsPage() {
   const [ncMsg, setNcMsg] = useState('')
   const [ncTesting, setNcTesting] = useState(false)
 
+  // API keys — stored server-side
   const [elApiKey, setElApiKey] = useState('')
   const [orApiKey, setOrApiKey] = useState('')
+  const [hasElKey, setHasElKey] = useState(false)
+  const [hasOrKey, setHasOrKey] = useState(false)
+  const [keysSaving, setKeysSaving] = useState(false)
+  const [keysMsg, setKeysMsg] = useState('')
 
   const getToken = useCallback(() => localStorage.getItem('token'), [])
 
@@ -40,15 +45,12 @@ export default function SettingsPage() {
     const token = getToken()
     return fetch(url, {
       ...options,
-      headers: {
-        ...options.headers,
-        Authorization: `Bearer ${token}`,
-      },
+      headers: { ...options.headers, Authorization: `Bearer ${token}` },
     })
   }, [getToken])
 
   useEffect(() => {
-    async function loadUser() {
+    async function loadData() {
       const res = await fetchWithAuth('/api/auth/me')
       if (!res.ok) { router.push('/login'); return }
       const data = await res.json()
@@ -56,9 +58,7 @@ export default function SettingsPage() {
       setName(data.user.name)
       setEmail(data.user.email)
     }
-    loadUser()
 
-    // Load Nextcloud config
     async function loadNextcloud() {
       const res = await fetchWithAuth('/api/settings/nextcloud')
       if (res.ok) {
@@ -70,11 +70,19 @@ export default function SettingsPage() {
         }
       }
     }
-    loadNextcloud()
 
-    // Load API keys from localStorage
-    setElApiKey(localStorage.getItem('elevenlabs_api_key') || '')
-    setOrApiKey(localStorage.getItem('openrouter_api_key') || '')
+    async function loadApiKeyStatus() {
+      const res = await fetchWithAuth('/api/settings/apikeys')
+      if (res.ok) {
+        const data = await res.json()
+        setHasElKey(data.hasElevenLabsKey)
+        setHasOrKey(data.hasOpenRouterKey)
+      }
+    }
+
+    loadData()
+    loadNextcloud()
+    loadApiKeyStatus()
   }, [fetchWithAuth, router])
 
   async function saveProfile(e: React.FormEvent) {
@@ -105,14 +113,8 @@ export default function SettingsPage() {
   async function changePassword(e: React.FormEvent) {
     e.preventDefault()
     setPasswordMsg('')
-    if (newPassword !== confirmPassword) {
-      setPasswordMsg('Passwords do not match')
-      return
-    }
-    if (newPassword.length < 8) {
-      setPasswordMsg('Password must be at least 8 characters')
-      return
-    }
+    if (newPassword !== confirmPassword) { setPasswordMsg('Passwords do not match'); return }
+    if (newPassword.length < 8) { setPasswordMsg('Password must be at least 8 characters'); return }
     setPasswordSaving(true)
     try {
       const res = await fetchWithAuth('/api/settings/password', {
@@ -147,11 +149,7 @@ export default function SettingsPage() {
         body: JSON.stringify({ url: ncUrl, username: ncUsername, password: ncPassword }),
       })
       const data = await res.json()
-      if (res.ok) {
-        setNcMsg('Nextcloud settings saved')
-      } else {
-        setNcMsg(data.error || 'Save failed')
-      }
+      setNcMsg(res.ok ? 'Nextcloud settings saved' : (data.error || 'Save failed'))
     } catch {
       setNcMsg('Network error')
     } finally {
@@ -177,10 +175,46 @@ export default function SettingsPage() {
     }
   }
 
-  function saveApiKeys() {
-    localStorage.setItem('elevenlabs_api_key', elApiKey)
-    localStorage.setItem('openrouter_api_key', orApiKey)
-    alert('API keys saved to browser storage')
+  async function saveApiKeys(e: React.FormEvent) {
+    e.preventDefault()
+    setKeysSaving(true)
+    setKeysMsg('')
+    try {
+      const body: Record<string, string | null> = {}
+      if (elApiKey !== '') body.elevenLabsKey = elApiKey || null
+      if (orApiKey !== '') body.openRouterKey = orApiKey || null
+
+      const res = await fetchWithAuth('/api/settings/apikeys', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+      if (res.ok) {
+        setKeysMsg('API keys saved securely')
+        if (elApiKey !== '') setHasElKey(!!elApiKey)
+        if (orApiKey !== '') setHasOrKey(!!orApiKey)
+        setElApiKey('')
+        setOrApiKey('')
+      } else {
+        setKeysMsg('Failed to save keys')
+      }
+    } catch {
+      setKeysMsg('Network error')
+    } finally {
+      setKeysSaving(false)
+    }
+  }
+
+  async function clearApiKey(type: 'elevenlabs' | 'openrouter') {
+    const body = type === 'elevenlabs' ? { elevenLabsKey: null } : { openRouterKey: null }
+    await fetchWithAuth('/api/settings/apikeys', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+    if (type === 'elevenlabs') setHasElKey(false)
+    else setHasOrKey(false)
+    setKeysMsg('Key removed')
   }
 
   return (
@@ -201,197 +235,138 @@ export default function SettingsPage() {
       </nav>
 
       <main className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-6">
-        {/* Profile Section */}
+        {/* Profile */}
         <div className="bg-white rounded-xl border border-gray-200 p-6">
           <h2 className="text-base font-semibold text-gray-900 mb-4">Profile</h2>
           <form onSubmit={saveProfile} className="space-y-4 max-w-md">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Full Name</label>
-              <input
-                type="text"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                required
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none text-sm"
-              />
+              <input type="text" value={name} onChange={(e) => setName(e.target.value)} required
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none text-sm" />
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
-              <input
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                required
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none text-sm"
-              />
+              <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none text-sm" />
             </div>
-            {profileMsg && (
-              <p className={`text-sm ${profileMsg.includes('success') ? 'text-green-600' : 'text-red-600'}`}>
-                {profileMsg}
-              </p>
-            )}
-            <button
-              type="submit"
-              disabled={profileSaving}
-              className="px-4 py-2 bg-primary-600 text-white text-sm font-medium rounded-lg hover:bg-primary-700 disabled:bg-primary-400 transition"
-            >
+            {profileMsg && <p className={`text-sm ${profileMsg.includes('success') ? 'text-green-600' : 'text-red-600'}`}>{profileMsg}</p>}
+            <button type="submit" disabled={profileSaving}
+              className="px-4 py-2 bg-primary-600 text-white text-sm font-medium rounded-lg hover:bg-primary-700 disabled:bg-primary-400 transition">
               {profileSaving ? 'Saving...' : 'Save Profile'}
             </button>
           </form>
         </div>
 
-        {/* Password Section */}
+        {/* Password */}
         <div className="bg-white rounded-xl border border-gray-200 p-6">
           <h2 className="text-base font-semibold text-gray-900 mb-4">Change Password</h2>
           <form onSubmit={changePassword} className="space-y-4 max-w-md">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Current Password</label>
-              <input
-                type="password"
-                value={currentPassword}
-                onChange={(e) => setCurrentPassword(e.target.value)}
-                required
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none text-sm"
-              />
+              <input type="password" value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} required
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none text-sm" />
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">New Password</label>
-              <input
-                type="password"
-                value={newPassword}
-                onChange={(e) => setNewPassword(e.target.value)}
-                required
-                minLength={8}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none text-sm"
-              />
+              <input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} required minLength={8}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none text-sm" />
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Confirm New Password</label>
-              <input
-                type="password"
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
-                required
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none text-sm"
-              />
+              <input type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} required
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none text-sm" />
             </div>
-            {passwordMsg && (
-              <p className={`text-sm ${passwordMsg.includes('success') ? 'text-green-600' : 'text-red-600'}`}>
-                {passwordMsg}
-              </p>
-            )}
-            <button
-              type="submit"
-              disabled={passwordSaving}
-              className="px-4 py-2 bg-primary-600 text-white text-sm font-medium rounded-lg hover:bg-primary-700 disabled:bg-primary-400 transition"
-            >
+            {passwordMsg && <p className={`text-sm ${passwordMsg.includes('success') ? 'text-green-600' : 'text-red-600'}`}>{passwordMsg}</p>}
+            <button type="submit" disabled={passwordSaving}
+              className="px-4 py-2 bg-primary-600 text-white text-sm font-medium rounded-lg hover:bg-primary-700 disabled:bg-primary-400 transition">
               {passwordSaving ? 'Changing...' : 'Change Password'}
             </button>
           </form>
         </div>
 
-        {/* Nextcloud Section */}
+        {/* API Keys — stored in DB, never in browser */}
         <div className="bg-white rounded-xl border border-gray-200 p-6">
-          <h2 className="text-base font-semibold text-gray-900 mb-1">Nextcloud Integration</h2>
-          <p className="text-sm text-gray-500 mb-4">Connect to your Nextcloud instance to import PDFs</p>
-          <form onSubmit={saveNextcloud} className="space-y-4 max-w-md">
+          <h2 className="text-base font-semibold text-gray-900 mb-1">Your API Keys</h2>
+          <p className="text-sm text-gray-500 mb-4">
+            Keys are stored securely on the server. Enter a new value to update, leave blank to keep existing.
+            If an admin has set site-wide keys, yours will take priority.
+          </p>
+          <form onSubmit={saveApiKeys} className="space-y-4 max-w-md">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Nextcloud URL</label>
-              <input
-                type="url"
-                value={ncUrl}
-                onChange={(e) => setNcUrl(e.target.value)}
-                placeholder="https://your-nextcloud.com/remote.php/dav/files/username"
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none text-sm"
-              />
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                ElevenLabs API Key
+                {hasElKey && <span className="ml-2 text-xs text-green-600 font-normal">● Key saved</span>}
+              </label>
+              <div className="flex gap-2">
+                <input type="password" value={elApiKey} onChange={(e) => setElApiKey(e.target.value)}
+                  placeholder={hasElKey ? 'Enter new key to replace' : 'Your ElevenLabs API key'}
+                  className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none text-sm" />
+                {hasElKey && (
+                  <button type="button" onClick={() => clearApiKey('elevenlabs')}
+                    className="px-3 py-2 text-xs text-red-600 border border-red-200 rounded-lg hover:bg-red-50">
+                    Remove
+                  </button>
+                )}
+              </div>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Username</label>
-              <input
-                type="text"
-                value={ncUsername}
-                onChange={(e) => setNcUsername(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none text-sm"
-              />
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                OpenRouter API Key
+                {hasOrKey && <span className="ml-2 text-xs text-green-600 font-normal">● Key saved</span>}
+              </label>
+              <div className="flex gap-2">
+                <input type="password" value={orApiKey} onChange={(e) => setOrApiKey(e.target.value)}
+                  placeholder={hasOrKey ? 'Enter new key to replace' : 'sk-or-...'}
+                  className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none text-sm" />
+                {hasOrKey && (
+                  <button type="button" onClick={() => clearApiKey('openrouter')}
+                    className="px-3 py-2 text-xs text-red-600 border border-red-200 rounded-lg hover:bg-red-50">
+                    Remove
+                  </button>
+                )}
+              </div>
             </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Password / App Token</label>
-              <input
-                type="password"
-                value={ncPassword}
-                onChange={(e) => setNcPassword(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none text-sm"
-              />
-            </div>
-            {ncMsg && (
-              <p className={`text-sm ${ncMsg.includes('success') || ncMsg.includes('successful') ? 'text-green-600' : 'text-red-600'}`}>
-                {ncMsg}
-              </p>
-            )}
-            <div className="flex gap-3">
-              <button
-                type="button"
-                onClick={testNextcloud}
-                disabled={ncTesting || !ncUrl}
-                className="px-4 py-2 border border-gray-300 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50 disabled:opacity-50 transition"
-              >
-                {ncTesting ? 'Testing...' : 'Test Connection'}
-              </button>
-              <button
-                type="submit"
-                disabled={ncSaving}
-                className="px-4 py-2 bg-primary-600 text-white text-sm font-medium rounded-lg hover:bg-primary-700 disabled:bg-primary-400 transition"
-              >
-                {ncSaving ? 'Saving...' : 'Save Settings'}
-              </button>
-            </div>
+            {keysMsg && <p className={`text-sm ${keysMsg.includes('saved') ? 'text-green-600' : 'text-red-600'}`}>{keysMsg}</p>}
+            <button type="submit" disabled={keysSaving || (!elApiKey && !orApiKey)}
+              className="px-4 py-2 bg-primary-600 text-white text-sm font-medium rounded-lg hover:bg-primary-700 disabled:bg-gray-300 transition">
+              {keysSaving ? 'Saving...' : 'Save Keys'}
+            </button>
           </form>
         </div>
 
-        {/* API Keys Section */}
+        {/* Nextcloud */}
         <div className="bg-white rounded-xl border border-gray-200 p-6">
-          <h2 className="text-base font-semibold text-gray-900 mb-1">API Keys</h2>
-          <p className="text-sm text-gray-500 mb-4">Keys are stored in your browser. Never sent to our servers without your action.</p>
-          <div className="space-y-4 max-w-md">
+          <h2 className="text-base font-semibold text-gray-900 mb-1">Nextcloud Integration</h2>
+          <p className="text-sm text-gray-500 mb-4">Connect to your Nextcloud to import PDFs (files are copied, not modified)</p>
+          <form onSubmit={saveNextcloud} className="space-y-4 max-w-md">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">ElevenLabs API Key</label>
-              <input
-                type="password"
-                value={elApiKey}
-                onChange={(e) => setElApiKey(e.target.value)}
-                placeholder="Your ElevenLabs API key for text-to-speech"
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none text-sm"
-              />
-              <p className="text-xs text-gray-400 mt-1">
-                Get your key at{' '}
-                <a href="https://elevenlabs.io" target="_blank" rel="noopener noreferrer" className="text-primary-600 hover:underline">
-                  elevenlabs.io
-                </a>
-              </p>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Nextcloud URL</label>
+              <input type="url" value={ncUrl} onChange={(e) => setNcUrl(e.target.value)}
+                placeholder="https://your-nextcloud.com/remote.php/dav/files/username"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none text-sm" />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">OpenRouter API Key</label>
-              <input
-                type="password"
-                value={orApiKey}
-                onChange={(e) => setOrApiKey(e.target.value)}
-                placeholder="sk-or-..."
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none text-sm"
-              />
-              <p className="text-xs text-gray-400 mt-1">
-                Get your key at{' '}
-                <a href="https://openrouter.ai" target="_blank" rel="noopener noreferrer" className="text-primary-600 hover:underline">
-                  openrouter.ai
-                </a>
-              </p>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Username</label>
+              <input type="text" value={ncUsername} onChange={(e) => setNcUsername(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none text-sm" />
             </div>
-            <button
-              onClick={saveApiKeys}
-              className="px-4 py-2 bg-primary-600 text-white text-sm font-medium rounded-lg hover:bg-primary-700 transition"
-            >
-              Save API Keys
-            </button>
-          </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Password / App Token</label>
+              <input type="password" value={ncPassword} onChange={(e) => setNcPassword(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none text-sm" />
+            </div>
+            {ncMsg && <p className={`text-sm ${ncMsg.includes('success') || ncMsg.includes('successful') ? 'text-green-600' : 'text-red-600'}`}>{ncMsg}</p>}
+            <div className="flex gap-3">
+              <button type="button" onClick={testNextcloud} disabled={ncTesting || !ncUrl}
+                className="px-4 py-2 border border-gray-300 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50 disabled:opacity-50 transition">
+                {ncTesting ? 'Testing...' : 'Test Connection'}
+              </button>
+              <button type="submit" disabled={ncSaving}
+                className="px-4 py-2 bg-primary-600 text-white text-sm font-medium rounded-lg hover:bg-primary-700 disabled:bg-primary-400 transition">
+                {ncSaving ? 'Saving...' : 'Save'}
+              </button>
+            </div>
+          </form>
         </div>
 
         {user && (

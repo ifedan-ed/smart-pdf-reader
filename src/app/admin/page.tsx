@@ -19,6 +19,11 @@ interface Stats {
   totalStorage: number
 }
 
+interface SiteConfig {
+  hasElevenLabsKey: boolean
+  hasOpenRouterKey: boolean
+}
+
 export default function AdminPage() {
   const router = useRouter()
   const [users, setUsers] = useState<User[]>([])
@@ -28,6 +33,11 @@ export default function AdminPage() {
   const [showCreateForm, setShowCreateForm] = useState(false)
   const [newUser, setNewUser] = useState({ name: '', email: '', password: '', role: 'USER' })
   const [creating, setCreating] = useState(false)
+  const [siteConfig, setSiteConfig] = useState<SiteConfig>({ hasElevenLabsKey: false, hasOpenRouterKey: false })
+  const [siteElKey, setSiteElKey] = useState('')
+  const [siteOrKey, setSiteOrKey] = useState('')
+  const [siteKeysSaving, setSiteKeysSaving] = useState(false)
+  const [siteKeysMsg, setSiteKeysMsg] = useState('')
 
   const getToken = useCallback(() => localStorage.getItem('token'), [])
 
@@ -61,10 +71,7 @@ export default function AdminPage() {
     setLoading(true)
     try {
       const res = await fetchWithAuth('/api/admin/users')
-      if (res.status === 403) {
-        router.push('/dashboard')
-        return
-      }
+      if (res.status === 403) { router.push('/dashboard'); return }
       if (!res.ok) throw new Error('Failed to load')
       const data = await res.json()
       setUsers(data.users || [])
@@ -76,9 +83,63 @@ export default function AdminPage() {
     }
   }, [fetchWithAuth, router])
 
+  const loadSiteConfig = useCallback(async () => {
+    try {
+      const res = await fetchWithAuth('/api/admin/config')
+      if (res.ok) {
+        const data = await res.json()
+        setSiteConfig(data)
+      }
+    } catch { /* ignore */ }
+  }, [fetchWithAuth])
+
   useEffect(() => {
     loadUsers()
-  }, [loadUsers])
+    loadSiteConfig()
+  }, [loadUsers, loadSiteConfig])
+
+  async function saveSiteKeys(e: React.FormEvent) {
+    e.preventDefault()
+    setSiteKeysSaving(true)
+    setSiteKeysMsg('')
+    try {
+      const body: Record<string, string | null> = {}
+      if (siteElKey !== '') body.elevenLabsKey = siteElKey || null
+      if (siteOrKey !== '') body.openRouterKey = siteOrKey || null
+      const res = await fetchWithAuth('/api/admin/config', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+      if (res.ok) {
+        setSiteKeysMsg('Site-wide keys saved')
+        if (siteElKey !== '') setSiteConfig(c => ({ ...c, hasElevenLabsKey: !!siteElKey }))
+        if (siteOrKey !== '') setSiteConfig(c => ({ ...c, hasOpenRouterKey: !!siteOrKey }))
+        setSiteElKey('')
+        setSiteOrKey('')
+      } else {
+        setSiteKeysMsg('Failed to save')
+      }
+    } catch {
+      setSiteKeysMsg('Network error')
+    } finally {
+      setSiteKeysSaving(false)
+    }
+  }
+
+  async function clearSiteKey(type: 'elevenlabs' | 'openrouter') {
+    const body = type === 'elevenlabs' ? { elevenLabsKey: null } : { openRouterKey: null }
+    await fetchWithAuth('/api/admin/config', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+    setSiteConfig(c => type === 'elevenlabs'
+      ? { ...c, hasElevenLabsKey: false }
+      : { ...c, hasOpenRouterKey: false }
+    )
+    setSiteKeysMsg('Key removed')
+  }
 
   async function deleteUser(userId: string) {
     if (!confirm('Are you sure you want to delete this user? All their PDFs will be deleted too.')) return
@@ -184,6 +245,60 @@ export default function AdminPage() {
             <p className="text-sm text-gray-500">Storage Used</p>
             <p className="text-3xl font-bold text-gray-900 mt-1">{formatSize(stats.totalStorage)}</p>
           </div>
+        </div>
+
+        {/* Site-wide API Keys */}
+        <div className="bg-white rounded-xl border border-gray-200 p-6 mb-6">
+          <h2 className="text-lg font-semibold text-gray-900 mb-1">Universal API Keys</h2>
+          <p className="text-sm text-gray-500 mb-4">
+            These keys are available to all users who have not set their own. User keys always take priority.
+            Key values are never exposed in the UI.
+          </p>
+          <form onSubmit={saveSiteKeys} className="space-y-4 max-w-md">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                ElevenLabs API Key
+                {siteConfig.hasElevenLabsKey
+                  ? <span className="ml-2 text-xs text-green-600 font-normal">● Key set</span>
+                  : <span className="ml-2 text-xs text-gray-400 font-normal">Not set</span>}
+              </label>
+              <div className="flex gap-2">
+                <input type="password" value={siteElKey} onChange={(e) => setSiteElKey(e.target.value)}
+                  placeholder={siteConfig.hasElevenLabsKey ? 'Enter new key to replace' : 'sk_...'}
+                  className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none" />
+                {siteConfig.hasElevenLabsKey && (
+                  <button type="button" onClick={() => clearSiteKey('elevenlabs')}
+                    className="px-3 py-2 text-xs text-red-600 border border-red-200 rounded-lg hover:bg-red-50">
+                    Remove
+                  </button>
+                )}
+              </div>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                OpenRouter API Key
+                {siteConfig.hasOpenRouterKey
+                  ? <span className="ml-2 text-xs text-green-600 font-normal">● Key set</span>
+                  : <span className="ml-2 text-xs text-gray-400 font-normal">Not set</span>}
+              </label>
+              <div className="flex gap-2">
+                <input type="password" value={siteOrKey} onChange={(e) => setSiteOrKey(e.target.value)}
+                  placeholder={siteConfig.hasOpenRouterKey ? 'Enter new key to replace' : 'sk-or-...'}
+                  className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none" />
+                {siteConfig.hasOpenRouterKey && (
+                  <button type="button" onClick={() => clearSiteKey('openrouter')}
+                    className="px-3 py-2 text-xs text-red-600 border border-red-200 rounded-lg hover:bg-red-50">
+                    Remove
+                  </button>
+                )}
+              </div>
+            </div>
+            {siteKeysMsg && <p className={`text-sm ${siteKeysMsg.includes('saved') ? 'text-green-600' : 'text-red-600'}`}>{siteKeysMsg}</p>}
+            <button type="submit" disabled={siteKeysSaving || (!siteElKey && !siteOrKey)}
+              className="px-4 py-2 bg-primary-600 text-white text-sm font-medium rounded-lg hover:bg-primary-700 disabled:bg-gray-300 transition">
+              {siteKeysSaving ? 'Saving...' : 'Save Universal Keys'}
+            </button>
+          </form>
         </div>
 
         {/* Users Table */}
