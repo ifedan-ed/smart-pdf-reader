@@ -26,10 +26,14 @@ COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 COPY --from=builder /app/prisma ./prisma
 COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
 COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
+COPY --from=builder /app/node_modules/prisma ./node_modules/prisma
+COPY --from=builder /app/node_modules/bcryptjs ./node_modules/bcryptjs
 COPY --from=builder /app/cli ./cli
+COPY --chown=nextjs:nodejs docker-entrypoint.sh ./docker-entrypoint.sh
 
 RUN mkdir -p /app/uploads && chown nextjs:nodejs /app/uploads
 RUN chown nextjs:nodejs /app/prisma
+RUN chmod +x /app/docker-entrypoint.sh
 
 USER nextjs
 
@@ -37,4 +41,4 @@ EXPOSE 3000
 ENV PORT 3000
 ENV HOSTNAME "0.0.0.0"
 
-CMD ["sh", "-c", "npx prisma db push && node server.js"]
+CMD ["/bin/sh", "/app/docker-entrypoint.sh"]
