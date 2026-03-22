@@ -1,0 +1,26 @@
+version: '3.8'
+services:
+  app:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      - DATABASE_URL=file:/app/prisma/prod.db
+      - JWT_SECRET=${JWT_SECRET:-change-me-in-production}
+      - ELEVENLABS_API_KEY=${ELEVENLABS_API_KEY:-}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
+      - ADMIN_EMAIL=${ADMIN_EMAIL:-admin@example.com}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-Admin@123456}
+      - SMTP_HOST=${SMTP_HOST:-}
+      - SMTP_PORT=${SMTP_PORT:-587}
+      - SMTP_USER=${SMTP_USER:-}
+      - SMTP_PASS=${SMTP_PASS:-}
+      - SMTP_FROM=${SMTP_FROM:-noreply@smartpdfreader.com}
+    volumes:
+      - pdf_uploads:/app/uploads
+      - db_data:/app/prisma
+    restart: unless-stopped
+
+volumes:
+  pdf_uploads:
+  db_data:

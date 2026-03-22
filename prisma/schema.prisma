@@ -1,0 +1,73 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String    @id @default(cuid())
+  email        String    @unique
+  password     String
+  name         String
+  role         String    @default("USER")
+  resetToken   String?
+  resetExpiry  DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  pdfs         PDF[]
+  highlights   Highlight[]
+  progress     ReadingProgress[]
+  nextcloud    NextcloudConfig?
+}
+
+model PDF {
+  id          String    @id @default(cuid())
+  title       String
+  filename    String
+  path        String
+  pageCount   Int       @default(0)
+  size        Int       @default(0)
+  source      String    @default("upload")
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  highlights  Highlight[]
+  progress    ReadingProgress[]
+  createdAt   DateTime  @default(now())
+}
+
+model Highlight {
+  id        String   @id @default(cuid())
+  pdfId     String
+  pdf       PDF      @relation(fields: [pdfId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  page      Int
+  text      String
+  color     String   @default("#ffff00")
+  rects     String
+  createdAt DateTime @default(now())
+}
+
+model ReadingProgress {
+  id          String   @id @default(cuid())
+  pdfId       String
+  pdf         PDF      @relation(fields: [pdfId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  currentPage Int      @default(1)
+  updatedAt   DateTime @updatedAt
+
+  @@unique([pdfId, userId])
+}
+
+model NextcloudConfig {
+  id       String @id @default(cuid())
+  userId   String @unique
+  user     User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  url      String
+  username String
+  password String
+}
