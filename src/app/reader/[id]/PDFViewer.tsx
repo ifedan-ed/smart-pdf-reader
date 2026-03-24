@@ -162,7 +162,17 @@ export default function PDFViewer({
     if (!text) return
 
     const range = selection.getRangeAt(0)
-    const rects = Array.from(range.getClientRects())
+    const rawRects = Array.from(range.getClientRects())
+    const containerBounds = containerRef.current?.getBoundingClientRect()
+
+    const rects = containerBounds
+      ? rawRects.map(r => new DOMRect(
+          r.x - containerBounds.x,
+          r.y - containerBounds.y,
+          r.width,
+          r.height
+        ))
+      : rawRects
 
     onTextSelected(text, rects as DOMRect[], { x: e.clientX, y: e.clientY })
   }
